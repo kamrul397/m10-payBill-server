@@ -39,6 +39,35 @@ async function run() {
       const result = await bills.find().toArray();
       res.send(result);
     });
+
+    app.get("/bills/:id", async (req, res) => {
+      const one = await bills.findOne({ _id: new ObjectId(req.params.id) });
+      res.send(one);
+    });
+
+    app.post("/my-bills", async (req, res) => {
+      const result = await myBills.insertOne(req.body);
+      res.send({ insertedId: result.insertedId });
+    });
+
+    app.get("/my-bills", async (req, res) => {
+      const { email } = req.query;
+      const data = await myBills.find({ email }).sort({ date: -1 }).toArray();
+      res.send(data);
+    });
+
+    app.patch("/my-bills/:id", async (req, res) => {
+      const r = await myBills.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: req.body }
+      );
+      res.send(r);
+    });
+
+    app.delete("/my-bills/:id", async (req, res) => {
+      const r = await myBills.deleteOne({ _id: new ObjectId(req.params.id) });
+      res.send(r);
+    });
   } catch (err) {
     console.log(err);
   }
