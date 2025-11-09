@@ -45,7 +45,18 @@ async function run() {
       res.send(one);
     });
 
+    // POST /my-bills
     app.post("/my-bills", async (req, res) => {
+      const { email, billsId } = req.body;
+
+      // ✅ Check if this user already paid this same bill
+      const exists = await myBills.findOne({ email, billsId });
+
+      if (exists) {
+        return res.status(400).send({ message: "Already paid this bill" });
+      }
+
+      // Otherwise insert new payment
       const result = await myBills.insertOne(req.body);
       res.send({ insertedId: result.insertedId });
     });
