@@ -9,7 +9,13 @@ const port = process.env.PORT || 3000;
 
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "*", // fallback to allow all
+    origin: [
+      "http://localhost:5173",
+      "https://pay-bill-a10.web.app",
+      "https://pay-bill-a10.firebaseapp.com",
+    ],
+    methods: ["GET", "POST", "PATCH", "DELETE"],
+    credentials: true,
   })
 );
 
