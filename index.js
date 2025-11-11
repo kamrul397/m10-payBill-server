@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -5,12 +7,16 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN,
+  })
+);
+
 app.use(express.json());
 
 // MongoDB URI
-const uri =
-  "mongodb+srv://kamrulislam25262800_db_user:J6dw4LqbzDdgamwS@paybillcluster.6mhzwpy.mongodb.net/?retryWrites=true&w=majority";
+const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -34,9 +40,23 @@ async function run() {
       res.send("Server Running ✅");
     });
 
-    // Example route to fetch bills
     app.get("/bills", async (req, res) => {
-      const result = await bills.find().toArray();
+      const { category, limit } = req.query;
+
+      let query = {};
+      if (category && category.trim()) {
+        const cleaned = category.trim();
+        // ✅ Case-insensitive + exact match
+        query.category = { $regex: `^${cleaned}$`, $options: "i" };
+      }
+
+      let cursor = bills.find(query).sort({ date: -1 });
+
+      if (limit) {
+        cursor = cursor.limit(parseInt(limit));
+      }
+
+      const result = await cursor.toArray();
       res.send(result);
     });
 
@@ -86,6 +106,10 @@ async function run() {
 
 run();
 
-app.listen(port, () => {
-  console.log(`✅ Server running on http://localhost:${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`✅ Server running on http://localhost:${port}`);
+  });
+}
+
+module.exports = app; // ✅ Add this line for Vercel
