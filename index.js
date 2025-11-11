@@ -9,16 +9,17 @@ const port = process.env.PORT || 3000;
 
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN,
+    origin: process.env.CORS_ORIGIN || "*", // fallback to allow all
   })
 );
 
 app.use(express.json());
 
-// MongoDB URI
-const uri = process.env.MONGODB_URI;
+// ✅ Use correct env name:
+const uri = process.env.MONGO_URI;
 
-const client = new MongoClient(uri, {
+// ✅ Create client only once (global cache for Vercel)
+let client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
@@ -26,90 +27,84 @@ const client = new MongoClient(uri, {
   },
 });
 
-async function run() {
-  try {
-    await client.connect();
-    console.log("✅ MongoDB Connected Successfully!");
+let db, bills, myBills;
 
-    const db = client.db("utility_db");
-    const bills = db.collection("bills");
-    const myBills = db.collection("myBills");
+// ✅ Connect only once (fix for Vercel cold starts)
+async function connectDB() {
+  if (db) return; // Already connected
+  await client.connect();
+  db = client.db("utility_db");
+  bills = db.collection("bills");
+  myBills = db.collection("myBills");
+  console.log("✅ MongoDB Connected Successfully!");
+}
 
-    // Test route
-    app.get("/", (req, res) => {
-      res.send("Server Running ✅");
-    });
+// ✅ ROUTES
+app.get("/", async (req, res) => {
+  await connectDB();
+  res.send("Server Running ✅");
+});
 
-    app.get("/bills", async (req, res) => {
-      const { category, limit } = req.query;
+app.get("/bills", async (req, res) => {
+  await connectDB();
+  const { category, limit } = req.query;
 
-      let query = {};
-      if (category && category.trim()) {
-        const cleaned = category.trim();
-        // ✅ Case-insensitive + exact match
-        query.category = { $regex: `^${cleaned}$`, $options: "i" };
-      }
-
-      let cursor = bills.find(query).sort({ date: -1 });
-
-      if (limit) {
-        cursor = cursor.limit(parseInt(limit));
-      }
-
-      const result = await cursor.toArray();
-      res.send(result);
-    });
-
-    app.get("/bills/:id", async (req, res) => {
-      const one = await bills.findOne({ _id: new ObjectId(req.params.id) });
-      res.send(one);
-    });
-
-    // POST /my-bills
-    app.post("/my-bills", async (req, res) => {
-      const { email, billsId } = req.body;
-
-      // ✅ Check if this user already paid this same bill
-      const exists = await myBills.findOne({ email, billsId });
-
-      if (exists) {
-        return res.status(400).send({ message: "Already paid this bill" });
-      }
-
-      // Otherwise insert new payment
-      const result = await myBills.insertOne(req.body);
-      res.send({ insertedId: result.insertedId });
-    });
-
-    app.get("/my-bills", async (req, res) => {
-      const { email } = req.query;
-      const data = await myBills.find({ email }).sort({ date: -1 }).toArray();
-      res.send(data);
-    });
-
-    app.patch("/my-bills/:id", async (req, res) => {
-      const r = await myBills.updateOne(
-        { _id: new ObjectId(req.params.id) },
-        { $set: req.body }
-      );
-      res.send(r);
-    });
-
-    app.delete("/my-bills/:id", async (req, res) => {
-      const r = await myBills.deleteOne({ _id: new ObjectId(req.params.id) });
-      res.send(r);
-    });
-  } catch (err) {
-    console.log(err);
+  let query = {};
+  if (category?.trim()) {
+    query.category = { $regex: `^${category}$`, $options: "i" };
   }
-}
 
-run();
+  let cursor = bills.find(query).sort({ date: -1 });
+  if (limit) cursor = cursor.limit(Number(limit));
 
+  res.send(await cursor.toArray());
+});
+
+app.get("/bills/:id", async (req, res) => {
+  await connectDB();
+  const one = await bills.findOne({ _id: new ObjectId(req.params.id) });
+  res.send(one);
+});
+
+app.post("/my-bills", async (req, res) => {
+  await connectDB();
+  const { email, billsId } = req.body;
+
+  const exists = await myBills.findOne({ email, billsId });
+  if (exists)
+    return res.status(400).send({ message: "Already paid this bill" });
+
+  const result = await myBills.insertOne(req.body);
+  res.send({ insertedId: result.insertedId });
+});
+
+app.get("/my-bills", async (req, res) => {
+  await connectDB();
+  const { email } = req.query;
+  const data = await myBills.find({ email }).sort({ date: -1 }).toArray();
+  res.send(data);
+});
+
+app.patch("/my-bills/:id", async (req, res) => {
+  await connectDB();
+  const r = await myBills.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: req.body }
+  );
+  res.send(r);
+});
+
+app.delete("/my-bills/:id", async (req, res) => {
+  await connectDB();
+  const r = await myBills.deleteOne({ _id: new ObjectId(req.params.id) });
+  res.send(r);
+});
+
+// ✅ Local mode only
 if (!process.env.VERCEL) {
-  app.listen(port, () => {
-    console.log(`✅ Server running on http://localhost:${port}`);
-  });
+  app.listen(port, () =>
+    console.log(`✅ Server running locally at http://localhost:${port}`)
+  );
 }
 
-module.exports = app; // ✅ Add this line for Vercel
+module.exports = app; // ✅ Required for Vercel deployment
