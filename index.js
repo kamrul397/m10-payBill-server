@@ -1,195 +1,136 @@
-// ======== IMPORTS ========
-require("dotenv").config(); // load .env (MONGO_URI, PORT)
+// index.js — minimal, Vercel-ready Express + MongoDB server
+
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { MongoClient, ObjectId, ServerApiVersion } = require("mongodb");
 
-// ======== APP CONFIG ========
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
+// CORS (add your live frontend domains here)
 app.use(
   cors({
     origin: [
-      "http://localhost:5173", // local dev (Vite)
-      "https://pay-bill-a10.web.app", // your Firebase frontend
-      // add your final Vercel frontend domain if you have one:
-      // "https://your-frontend.vercel.app",
+      "http://localhost:5173",
+      "https://pay-bill-a10.web.app",
+      "https://m10-pay-bill-server.vercel.app",
     ],
     credentials: true,
   })
 );
+app.use(express.json());
 
-// ======== MONGO CONNECTION ========
-const uri = process.env.MONGO_URI; // from .env
-
-const client = new MongoClient(uri, {
+// --- Mongo client (single, reusable) ---
+const client = new MongoClient(process.env.MONGO_URI, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
   },
 });
+let bills, myBills;
 
-let db, bills, myBills;
-
-async function connectDB() {
-  if (db) return db; // reuse if already connected
+async function db() {
+  if (bills && myBills) return;
   await client.connect();
-  db = client.db("utility_db");
-  bills = db.collection("bills");
-  myBills = db.collection("myBills");
-  console.log("✅ MongoDB Connected Successfully!");
-  return db;
+  const database = client.db("utility_db");
+  bills = database.collection("bills");
+  myBills = database.collection("myBills");
+  console.log("✅ MongoDB connected");
 }
 
-// ======== ROUTES ========
+// --- Routes ---
+app.get("/", (_, res) => res.send("✅ PayBill Server Running Successfully!"));
 
-// 🔹 Root test route
-app.get("/", (req, res) => {
-  res.send("✅ PayBill Server Running Successfully!");
-});
-
-// 🔹 Fetch all or filtered bills
+// List bills (optional: ?category=&limit=)
 app.get("/bills", async (req, res) => {
   try {
-    await connectDB();
+    await db();
     const { category, limit } = req.query;
-    const query = {};
-
-    if (category) {
-      // case-insensitive exact match
-      query.category = { $regex: new RegExp(`^${category}$`, "i") };
-    }
-
+    const query = category
+      ? { category: { $regex: new RegExp(`^${category}$`, "i") } }
+      : {};
     let cursor = bills.find(query).sort({ date: -1 });
-    if (limit) cursor = cursor.limit(parseInt(limit, 10));
-
-    const result = await cursor.toArray();
-    res.send(result);
-  } catch (err) {
-    console.error("Error fetching bills:", err);
+    if (limit) cursor = cursor.limit(parseInt(limit, 10) || 0);
+    res.send(await cursor.toArray());
+  } catch (e) {
+    console.error(e);
     res.status(500).send({ message: "Failed to fetch bills" });
   }
 });
 
-// 🔹 Fetch a single bill by ID
+// Single bill
 app.get("/bills/:id", async (req, res) => {
   try {
-    await connectDB();
-    const one = await bills.findOne({ _id: new ObjectId(req.params.id) });
-    res.send(one);
-  } catch (err) {
-    console.error("Error fetching bill:", err);
+    await db();
+    res.send(await bills.findOne({ _id: new ObjectId(req.params.id) }));
+  } catch (e) {
+    console.error(e);
     res.status(500).send({ message: "Failed to fetch bill" });
   }
 });
 
-// 🔹 Fetch distinct categories (for Home.jsx public categories)
-app.get("/categories", async (req, res) => {
+// Distinct categories
+app.get("/categories", async (_req, res) => {
   try {
-    await connectDB();
-    const categories = await bills.distinct("category");
-    res.send(categories);
-  } catch (err) {
-    console.error("Error fetching categories:", err);
+    await db();
+    res.send(await bills.distinct("category"));
+  } catch (e) {
+    console.error(e);
     res.status(500).send({ message: "Failed to fetch categories" });
   }
 });
 
-// 🔹 Add new user payment (prevent duplicates)
-//    (Option 2 from earlier: simple insert; you can also enrich here if you prefer)
+// Save a user bill (prevents duplicate by email+billsId)
 app.post("/my-bills", async (req, res) => {
   try {
-    await connectDB();
+    await db();
     const { email, billsId } = req.body;
-
-    if (!email || !billsId) {
+    if (!email || !billsId)
       return res.status(400).send({ message: "Missing email or billsId" });
-    }
-
     const exists = await myBills.findOne({ email, billsId });
-    if (exists) {
+    if (exists)
       return res.status(400).send({ message: "Already paid this bill" });
-    }
-
-    const result = await myBills.insertOne({
+    const r = await myBills.insertOne({
       ...req.body,
       date: req.body?.date || new Date().toISOString(),
     });
-
-    res.send({ insertedId: result.insertedId });
-  } catch (err) {
-    console.error("Error saving user bill:", err);
+    res.send({ insertedId: r.insertedId });
+  } catch (e) {
+    console.error(e);
     res.status(500).send({ message: "Failed to save user bill" });
   }
 });
 
-// 🔹 Fetch user-specific bills (ENRICHED so images/title/category show)
+// Get user's bills (enriched with bill details so images/titles show)
 app.get("/my-bills", async (req, res) => {
   try {
-    await connectDB();
+    await db();
     const { email, limit } = req.query;
     if (!email) return res.status(400).send({ message: "Missing email" });
 
     let cursor = myBills.find({ email }).sort({ date: -1 });
-    if (limit) cursor = cursor.limit(parseInt(limit, 10));
-
+    if (limit) cursor = cursor.limit(parseInt(limit, 10) || 0);
     const rows = await cursor.toArray();
 
-    // Join with 'bills' by billsId so UI can use bill.image/title/category
     const enriched = await Promise.all(
       rows.map(async (row) => {
-        if (!row.billsId) return row; // fallback, if malformed
-        const billDoc = await bills.findOne({ _id: new ObjectId(row.billsId) });
-        // Merge: bill fields first (title/image/category/location/amount), then user record (status, etc.)
-        return billDoc ? { ...billDoc, ...row } : row;
+        if (!row.billsId) return row;
+        const src = await bills.findOne({ _id: new ObjectId(row.billsId) });
+        return src ? { ...src, ...row } : row;
       })
     );
-
     res.send(enriched);
-  } catch (err) {
-    console.error("Error fetching user bills:", err);
+  } catch (e) {
+    console.error(e);
     res.status(500).send({ message: "Failed to fetch user bills" });
   }
 });
 
-// 🔹 Update a specific user bill
-app.patch("/my-bills/:id", async (req, res) => {
-  try {
-    await connectDB();
-    const r = await myBills.updateOne(
-      { _id: new ObjectId(req.params.id) },
-      { $set: req.body }
-    );
-    res.send(r);
-  } catch (err) {
-    console.error("Error updating user bill:", err);
-    res.status(500).send({ message: "Failed to update user bill" });
-  }
-});
+// Local dev only — Vercel uses the exported app below
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => console.log(`✅ Local: http://localhost:${port}`));
+}
 
-// 🔹 Delete a specific user bill
-app.delete("/my-bills/:id", async (req, res) => {
-  try {
-    await connectDB();
-    const r = await myBills.deleteOne({ _id: new ObjectId(req.params.id) });
-    res.send(r);
-  } catch (err) {
-    console.error("Error deleting user bill:", err);
-    res.status(500).send({ message: "Failed to delete user bill" });
-  }
-});
-
-// ======== ERROR HANDLER ========
-app.use((err, req, res, next) => {
-  console.error("❌ Server Error:", err);
-  res.status(500).json({ message: "Internal Server Error" });
-});
-
-// ======== START SERVER ========
-app.listen(port, () => {
-  console.log(`✅ Server running on http://localhost:${port}`);
-});
 module.exports = app;
