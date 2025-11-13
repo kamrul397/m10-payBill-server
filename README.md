@@ -1,40 +1,49 @@
----
-
-# ✅ **SERVER — `server/README.md`**
-
-```markdown
-# Utility Bill Management System (Server)
+# ⚡ Utility Bill Management System — Server (Backend API)
 
 This is the **backend REST API** for the Utility Bill Management System.  
-It is built using **Node.js**, **Express**, and **MongoDB Atlas**.
+Built using **Node.js**, **Express.js**, and **MongoDB Atlas**, this API manages bills, payments, and user-specific records.
 
 ---
 
 ## 🌍 Live API Base URL
+> https://m10-paybill-server.onrender.com/
+**Example:**
+> 
+---
 
-_Add after deployment_  
-Example:
+## 🧰 Tech Stack
+
+- **Node.js**
+- **Express.js**
+- **MongoDB Atlas**
+- **CORS Enabled**
+- **Environment Variables via dotenv**
+- **RESTful API Architecture**
 
 ---
 
-## 🧰 Technologies Used
+## 📡 API Endpoints
 
-- Node.js
-- Express.js
-- MongoDB Atlas
-- CORS Enabled
+### 🔹 **Bills**
+| Method | Endpoint      | Description                                |
+| ------ | ------------- | ------------------------------------------ |
+| GET    | `/bills`      | Fetch all bills (with optional category)   |
+| GET    | `/bills/:id`  | Fetch full details of a single bill        |
+
+---
+
+### 🔹 **User Payments**
+| Method | Endpoint                        | Description                                 |
+| ------ | -------------------------------- | ------------------------------------------- |
+| POST   | `/my-bills`                     | Pay a bill (prevents duplicate payments)    |
+| GET    | `/my-bills?email=user@mail.com` | Get all bills paid by a specific user       |
+| PATCH  | `/my-bills/:id`                 | Update a user’s payment entry               |
+| DELETE | `/my-bills/:id`                 | Delete a payment entry                      |
 
 ---
 
-## 📦 Endpoints
+## 🔐 Environment Variables
 
-| Method | Endpoint                        | Description                                |
-| ------ | ------------------------------- | ------------------------------------------ |
-| GET    | `/bills`                        | Get all bills (optional category filter)   |
-| GET    | `/bills/:id`                    | Get single bill details                    |
-| POST   | `/my-bills`                     | Pay a bill _(prevents duplicate payments)_ |
-| GET    | `/my-bills?email=user@mail.com` | Get bills paid by this user only           |
-| PATCH  | `/my-bills/:id`                 | Update a payment entry                     |
-| DELETE | `/my-bills/:id`                 | Delete a payment entry                     |
+Create a `.env` file with:
 
----
+
